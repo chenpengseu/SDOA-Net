@@ -1,0 +1,11 @@
+--- /Users/chenpeng/Dropbox/Work/Research/WorkingOn/DOA_DL/Simulations/Onlinecode/doasys.py
++++ /Users/chenpeng/Dropbox/Work/Research/WorkingOn/DOA_DL/Simulations/Onlinecode/doasys.py
+@@ -5,7 +5,7 @@
+         self.n_filters = n_filters
+         self.in_layer = nn.Linear(2 * signal_dim, inner_dim * n_filters, bias=False)
+         mod = []
+-        for n in range(n_layers):
++        for n in range(n_layers):  # padding=kernel_size - 1
+             mod += [
+                 nn.Conv1d(n_filters, n_filters, kernel_size=kernel_size, padding=kernel_size - 1, bias=False,
+                           padding_mode='circular'),
