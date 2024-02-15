@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 def gen_doa(target_num, doa, ant_num):
     doa_min = -45
     doa_max = 45
+    # min_sep = 102.0 / ((ant_num-1)*super_ratio)
     min_sep = 102.0 / (ant_num - 1) * 2.0
     for n in range(target_num):
         condition = True
@@ -18,6 +19,9 @@ def gen_doa(target_num, doa, ant_num):
             doa_new = np.random.rand() * (doa_max - doa_min) + doa_min
             condition = (np.min(np.abs(doa - doa_new)) < min_sep)
         doa[n] = doa_new
+    # for n in range(target_num):
+    #     doa_new = np.random.rand() * (doa_max - doa_min) + doa_min
+    #     doa[n] = doa_new
 
 
 def steer_vec(doa_deg, d, ant_num, d_per):
@@ -60,7 +64,7 @@ def gen_signal(data_num, args):
 
         # non linear function
         if args.is_nonlinear:
-            s[n] = np.tanh(args.nonlinear * s[n])
+            s[n] = np.tanh(args.nonlinear*s[n])
             s[n] = s[n] / np.sqrt(np.mean(np.power(s[n], 2)))
 
     doa[doa == float('inf')] = -100
@@ -81,6 +85,8 @@ def noise_torch(s, snr):
     s = s.view(bsz, -1)
     sigma_max = np.sqrt(1. / snr)
     sigmas = sigma_max * torch.rand(bsz, device=s.device, dtype=s.dtype)
+    # sigmas = math.sqrt(1.0/snr)
+
     noise = torch.randn(s.size(), device=s.device, dtype=s.dtype)
     mult = sigmas * torch.norm(s, 2, dim=1) / (torch.norm(noise, 2, dim=1))
     noise = noise * mult[:, None]
@@ -94,14 +100,17 @@ class spectrumModule(nn.Module):
         self.n_filters = n_filters
         self.in_layer = nn.Linear(2 * signal_dim, inner_dim * n_filters, bias=False)
         mod = []
-        for n in range(n_layers):
+        for n in range(n_layers):  # padding=kernel_size - 1
             mod += [
                 nn.Conv1d(n_filters, n_filters, kernel_size=kernel_size, padding=kernel_size - 1, bias=False,
                           padding_mode='circular'),
+                # nn.Conv1d(n_filters, n_filters, kernel_size=kernel_size, padding=kernel_size - 1, bias=False),
                 nn.BatchNorm1d(n_filters),
                 nn.ReLU(),
             ]
         self.mod = nn.Sequential(*mod)
+        # self.out_layer1 = nn.ConvTranspose1d(n_filters, 1, 4, stride=1, padding=4 // 2, output_padding=1, bias=False)
+        # self.linear1 = nn.Linear(inner_dim, 2 * signal_dim, bias=False)
         self.out_layer = nn.Linear(inner_dim * n_filters, 2 * signal_dim, bias=False)
 
     def forward(self, inp):
@@ -132,6 +141,8 @@ class DeepFreq(nn.Module):
         self.mod = nn.Sequential(*mod)
         self.out_layer = nn.ConvTranspose1d(n_filters, 1, kernel_out, stride=upsampling,
                                             padding=(kernel_out - upsampling + 1) // 2, output_padding=1, bias=False)
+
+    # padding = (kernel_out - upsampling + 1) // 2
     def forward(self, inp):
         bsz = inp.size(0)
         inp = inp.view(bsz, -1)
@@ -151,6 +162,8 @@ def get_doa(sp, doa_num, doa_grid, max_target_num, ref_doa):
         tmp = est_doa[n].copy()
         for idx_tmp in range(len(ref_doa[n])):
             est_doa[n, idx_tmp] = tmp[np.argmin(np.abs(ref_doa[n, idx_tmp] - tmp))]
+
+    # est_doa = np.sort(est_doa, axis=1)
     return est_doa
 
 
@@ -180,6 +193,7 @@ def train_net(args, net, optimizer, criterion, train_loader, val_loader,
                                                                                          dic_mat_torch[:, 1, :].T)
             mm_imag = torch.mm(output_net[:, 0, :], dic_mat_torch[:, 1, :].T) - torch.mm(output_net[:, 1, :],
                                                                                          dic_mat_torch[:, 0, :].T)
+            # loss = criterion(torch.pow(mm_real, 2) + torch.pow(mm_imag, 2), target_sp)
         else:
             mm_real = output_net[:, 0, :]
             mm_imag = output_net[:, 1, :]
@@ -189,6 +203,12 @@ def train_net(args, net, optimizer, criterion, train_loader, val_loader,
         loss.backward()
         optimizer.step()
         loss_train += loss.data.item()
+
+        # plt.figure()
+        # plt.plot(sp.cpu().detach().numpy()[0])
+        # plt.plot(target_sp.cpu().detach().numpy()[0])
+        # plt.show()
+
     net.eval()
     loss_val, fnr_val = 0, 0
     for batch_idx, (noisy_signal, _, target_sp, doa) in enumerate(val_loader):
@@ -215,11 +235,13 @@ def train_net(args, net, optimizer, criterion, train_loader, val_loader,
     loss_train /= args.n_training
     loss_val /= args.n_validation
 
-    print("Train_Num: %d, Train_Type: %d, Epochs: %d / %d, Time: %.1f, Training Loss: %.2f, Validation Loss:  %.2f" % (
+    print("TTrain_Num: %d, rain_Type: %d, Epochs: %d / %d, Time: %.1f, Training Loss: %.2f, Validation Loss:  %.2f" % (
         train_num,
         train_type,
         epoch, args.n_epochs,
         time.time() - epoch_start_time,
         loss_train,
         loss_val))
-    return net
+    # print(np.sort(doa[0]))
+    # print(np.sort(est_doa[0]))
+    return net, loss_train, loss_val
